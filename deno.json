@@ -1,0 +1,25 @@
+{
+  "lock": false,
+  "name": "@artpani/guarden",
+  "version": "0.0.1",
+  "license": "MIT",
+  "exports": {
+    ".": "./source/mod.ts",
+    "./types": "./source/types.ts"
+  },
+  "imports": {
+  },
+  "tasks": {
+    "example-server": "deno run --allow-all --watch ./example-project/server.ts",
+    "example-client": "deno run --allow-all ./example-project/client.ts",
+    "example-server-hard": "deno run --allow-all --watch ./example-project-hard/server.ts",
+    "example-client-hard": "deno run --allow-all ./example-project-hard/client.ts",
+    "test": "deno task example-server && deno task example-client && deno test ./example-project/examples.test.ts",
+    "pub-dry": "deno publish --dry-run --allow-slow-types"
+  },
+  "fmt": {
+    "exclude": [
+      "./source/versions.ts"
+    ]
+  }
+}
