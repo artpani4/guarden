@@ -3,7 +3,7 @@ import apifly from "@vseplet/apifly";
 import type { GuardenDefinition } from "./GuardenDefinition.ts";
 import { crypto } from "./deps.ts";
 
-const kv = await Deno.openKv("./database");
+const kv = await Deno.openKv();
 
 async function generateToken(userId: string): Promise<string> {
   const token = crypto.randomUUID();
