@@ -23,10 +23,10 @@ export function fetchSecretsCommand() {
         }
 
         const { secrets, currentEnv } = await fetchSecrets(env);
-
+        console.log(`Текущее окружение: ${currentEnv}`);
         for (const [key, value] of Object.entries(secrets)) {
           Deno.env.set(key, value);
-          console.log(`Текущее окружение: ${currentEnv}`);
+
           console.log(`Экспортировано ${key}: ${value}`);
         }
 

@@ -23,7 +23,12 @@ export function selectEnvCommand() {
         });
 
         await setCurrentEnv(selectedEnv as string);
-        console.log(green(`Окружение '${selectedEnv}' успешно выбрано.`));
+        const response2 = await client.call("selectEnvironment", [selectedEnv]);
+        if (response2.success) {
+          console.log(green(`Окружение '${selectedEnv}' успешно выбрано.`));
+        } else {
+          console.log(red(`Ошибка: ${response2.error}`));
+        }
       } catch (error) {
         console.error(red(`Ошибка: ${error.message}`));
       }
