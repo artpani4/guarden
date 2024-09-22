@@ -6,3 +6,6 @@ TAG-NAME.txt
 .drafts
 .zed
 .env
+database
+database-shm
+database-wal
