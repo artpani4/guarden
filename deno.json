@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "license": "MIT",
   "imports": {
-    "@vseplet/apifly": "jsr:@vseplet/apifly@^0.0.38",
+    "@vseplet/apifly": "jsr:@vseplet/apifly@^0.0.39",
     "cliffy/": "https://deno.land/x/cliffy@v1.0.0-rc.4/",
     "std/": "https://deno.land/std@0.203.0/"
   },

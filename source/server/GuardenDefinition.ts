@@ -1,10 +1,6 @@
 import { type ApiflyDefinition } from "@vseplet/apifly/types";
 import { ProjectData, TProjects } from "./server.ts";
 
-// ["tokens", "ТОКЕН", "ИМЯ"] - {}
-// ["projects", "UUID_ПРОЕКТА"] - {"name": "ИМЯ_ПРОЕКТА", "environments": {"dev": {"key": "value"}}}
-// ["joint", "ТОКЕН", "UUID_ПРОЕКТА"]
-
 export type GuardenDefinition = ApiflyDefinition<
   {
     token: string | null;
