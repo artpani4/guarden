@@ -7,8 +7,8 @@ export async function createClient(): Promise<ApiflyClient<GuardenDefinition>> {
   const token = await getToken();
 
   return new apifly.client<GuardenDefinition>({
-    // baseURL: "http://guarden.deno.dev/api/apifly",
-    baseURL: "http://localhost:8000/api/apifly",
+    baseURL: "http://guarden.deno.dev/api/apifly",
+    // baseURL: "http://localhost:8000/api/apifly",
     headers: token
       ? {
         Authorization: token,
@@ -21,8 +21,8 @@ export async function createClient(): Promise<ApiflyClient<GuardenDefinition>> {
 export async function generateToken(userId: string): Promise<string> {
   try {
     const client = new apifly.client<GuardenDefinition>({
-      // baseURL: "http://guarden.deno.dev/api/apifly",
-      baseURL: "http://localhost:8000/api/apifly",
+      baseURL: "http://guarden.deno.dev/api/apifly",
+      // baseURL: "http://localhost:8000/api/apifly",
       headers: {
         new: "true",
       },
