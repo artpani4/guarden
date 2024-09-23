@@ -4,14 +4,15 @@
   "version": "0.0.1",
   "license": "MIT",
   "imports": {
-    "@vseplet/apifly": "jsr:@vseplet/apifly@^0.0.30",
+    "@vseplet/apifly": "jsr:@vseplet/apifly@^0.0.37",
     "cliffy/": "https://deno.land/x/cliffy@v1.0.0-rc.4/",
     "std/": "https://deno.land/std@0.203.0/"
   },
   "tasks": {
     "server": "deno run --allow-all --watch  --unstable-kv source/server/server.ts",
     "cli-install": "deno install --allow-all --unstable-kv --name guarden source/client/cli.ts",
-    "testing": "deno run --allow-all ./test/mod.ts"
+    "testing": "deno run --allow-all ./test/mod.ts",
+    "kv": "deno run --allow-all --unstable-kv ./test/kvCheck.ts"
   },
   "fmt": {
     "exclude": [

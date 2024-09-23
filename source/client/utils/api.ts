@@ -7,7 +7,8 @@ export async function createClient(): Promise<ApiflyClient<GuardenDefinition>> {
   const token = await getToken();
 
   return new apifly.client<GuardenDefinition>({
-    baseURL: "http://guarden.deno.dev/api/apifly",
+    // baseURL: "http://guarden.deno.dev/api/apifly",
+    baseURL: "http://localhost:8000/api/apifly",
     headers: token
       ? {
         Authorization: token,
@@ -19,7 +20,15 @@ export async function createClient(): Promise<ApiflyClient<GuardenDefinition>> {
 
 export async function generateToken(userId: string): Promise<string> {
   try {
-    const client = await createClient(); // Создаём клиента Apifly
+    const client = new apifly.client<GuardenDefinition>({
+      // baseURL: "http://guarden.deno.dev/api/apifly",
+      baseURL: "http://localhost:8000/api/apifly",
+      headers: {
+        new: "true",
+      },
+      limiter: { unlimited: true },
+    });
+
     const response = await client.call("generateToken", [userId]);
 
     if (!response.success) {
@@ -40,98 +49,154 @@ export async function generateToken(userId: string): Promise<string> {
   }
 }
 
-export async function createEnvironment(envName: string): Promise<string> {
+// export async function createEnvironment(envName: string): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("createEnvironment", [envName]);
+
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
+
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при создании окружения: ${error.message}`);
+//   }
+// }
+
+// export async function selectEnvironment(
+//   envName: string,
+// ): Promise<{ success: boolean; message: string }> {
+//   const client = await createClient();
+//   const response = await client.call("selectEnvironment", [envName]);
+//   return response;
+// }
+
+// export async function fetchSecrets(
+//   envName: string,
+// ): Promise<{ secrets: Record<string, string>; currentEnv: string }> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("fetchSecrets", [envName]);
+
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
+
+//     return { secrets: response.secrets!, currentEnv: response.currentEnv };
+//   } catch (error) {
+//     throw new Error(`Ошибка при получении секретов: ${error.message}`);
+//   }
+// }
+
+// export async function addSecret(
+//   envName: string,
+//   key: string,
+//   value: string,
+// ): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("addSecret", [envName, key, value]);
+
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
+
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при добавлении секрета: ${error.message}`);
+//   }
+// }
+
+// export async function updateSecret(
+//   envName: string,
+//   key: string,
+//   value: string,
+// ): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("updateSecret", [envName, key, value]);
+
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
+
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при обновлении секрета: ${error.message}`);
+//   }
+// }
+
+// export async function deleteSecret(
+//   envName: string,
+//   key: string,
+// ): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("deleteSecret", [envName, key]);
+
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
+
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при удалении секрета: ${error.message}`);
+//   }
+// }
+
+export async function createProject(
+  projectName: string,
+): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     const client = await createClient();
-    const response = await client.call("createEnvironment", [envName]);
+    const response = await client.call("createProject", [projectName]);
 
     if (!response.success) {
-      throw new Error(response.message);
+      return {
+        success: false,
+        error: response.error || "Ошибка при создании проекта",
+      };
     }
 
-    return response.message;
+    return { success: true };
   } catch (error) {
-    throw new Error(`Ошибка при создании окружения: ${error.message}`);
+    return { success: false, error: error.message };
   }
 }
 
-export async function selectEnvironment(
-  envName: string,
-): Promise<{ success: boolean; message: string }> {
-  const client = await createClient();
-  const response = await client.call("selectEnvironment", [envName]);
-  return response;
-}
+// export async function deleteProject(projectName: string): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("deleteProject", [projectName]);
 
-export async function fetchSecrets(
-  envName: string,
-): Promise<{ secrets: Record<string, string>; currentEnv: string }> {
-  try {
-    const client = await createClient();
-    const response = await client.call("fetchSecrets", [envName]);
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
 
-    if (!response.success) {
-      throw new Error(response.message);
-    }
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при удалении проекта: ${error.message}`);
+//   }
+// }
 
-    return { secrets: response.secrets!, currentEnv: response.currentEnv };
-  } catch (error) {
-    throw new Error(`Ошибка при получении секретов: ${error.message}`);
-  }
-}
+// export async function inviteUserToProject(
+//   inviteeToken: string,
+//   projectName: string,
+// ): Promise<string> {
+//   try {
+//     const client = await createClient();
+//     const response = await client.call("inviteUserToProject", [
+//       inviteeToken,
+//       projectName,
+//     ]);
 
-export async function addSecret(
-  envName: string,
-  key: string,
-  value: string,
-): Promise<string> {
-  try {
-    const client = await createClient();
-    const response = await client.call("addSecret", [envName, key, value]);
+//     if (!response.success) {
+//       throw new Error(response.message);
+//     }
 
-    if (!response.success) {
-      throw new Error(response.message);
-    }
-
-    return response.message;
-  } catch (error) {
-    throw new Error(`Ошибка при добавлении секрета: ${error.message}`);
-  }
-}
-
-export async function updateSecret(
-  envName: string,
-  key: string,
-  value: string,
-): Promise<string> {
-  try {
-    const client = await createClient();
-    const response = await client.call("updateSecret", [envName, key, value]);
-
-    if (!response.success) {
-      throw new Error(response.message);
-    }
-
-    return response.message;
-  } catch (error) {
-    throw new Error(`Ошибка при обновлении секрета: ${error.message}`);
-  }
-}
-
-export async function deleteSecret(
-  envName: string,
-  key: string,
-): Promise<string> {
-  try {
-    const client = await createClient();
-    const response = await client.call("deleteSecret", [envName, key]);
-
-    if (!response.success) {
-      throw new Error(response.message);
-    }
-
-    return response.message;
-  } catch (error) {
-    throw new Error(`Ошибка при удалении секрета: ${error.message}`);
-  }
-}
+//     return response.message;
+//   } catch (error) {
+//     throw new Error(`Ошибка при инвайте пользователя: ${error.message}`);
+//   }
+// }

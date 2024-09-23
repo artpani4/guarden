@@ -1,79 +1,15 @@
 import { Hono } from "./deps.ts";
 import apifly from "@vseplet/apifly";
 import type { GuardenDefinition } from "./GuardenDefinition.ts";
-import { crypto } from "./deps.ts";
+import { generateToken } from "./token.ts";
 
-const kv = await Deno.openKv();
+export const kv = await Deno.openKv();
 
-async function generateToken(userId: string): Promise<string> {
-  const token = crypto.randomUUID();
-  await kv.set(["tokens", token], userId);
-  return token;
-}
-
-async function createEnvironment(
-  userId: string,
-  envName: string,
-): Promise<string> {
-  const envEntry = await kv.get([userId, "envs", envName]);
-  if (envEntry.value) {
-    return `Окружение '${envName}' уже существует.`;
-  }
-
-  await kv.set([userId, "envs", envName], {});
-  return `Окружение '${envName}' успешно создано.`;
-}
-
-async function loadState(args: { token: string | null }) {
-  const { token } = args;
-
-  if (!token) {
-    console.log("No auth token provided. Proceeding without auth.");
-    return [{ token: null, currentEnv: null, secrets: {} }, null];
-  }
-
-  const tokenEntry = await kv.get(["tokens", token]);
-  if (!tokenEntry.value) {
-    console.error("Invalid or expired token. Removing local token.");
-
-    return [
-      {},
-      new Error(
-        "Неверный или просроченный токен. Пожалуйста, сгенерируйте новый токен.",
-      ),
-    ];
-  }
-
-  const currentEnvEntry = await kv.get([token, "currentEnv"]);
-  const currentEnv = currentEnvEntry?.value || null;
-
-  const secrets: Record<string, Record<string, string>> = {};
-  const secretsList = await kv.list({ prefix: [token, "envs"] });
-
-  for await (const entry of secretsList) {
-    const envName = entry.key[2] as string;
-    //@ts-ignore
-    secrets[envName] = entry.value;
-  }
-
-  return [{ token, currentEnv, secrets }, null];
-}
-
-async function unloadState(args: { token: string | null; state: any }) {
-  const { token, state } = args;
-
-  if (!token) {
-    console.error("No auth token provided for unload.");
-    return;
-  }
-
-  if (state.currentEnv) {
-    await kv.set([token, "currentEnv"], state.currentEnv);
-  }
-
-  for (const envName of Object.keys(state.secrets)) {
-    await kv.set([token, "envs", envName], state.secrets[envName]);
-  }
+export type TProjects = Record<string, ProjectData>;
+export interface ProjectData {
+  uuid: string;
+  environments: Record<string, Record<string, string>>;
+  name: string;
 }
 
 const apiflyManager = new apifly.manager<GuardenDefinition>(
@@ -81,10 +17,105 @@ const apiflyManager = new apifly.manager<GuardenDefinition>(
   5000,
   "token",
 )
-  //@ts-ignore
-  .load(loadState)
-  //@ts-ignore
-  .unload(unloadState)
+  .load(async (args) => {
+    const { token } = args;
+    if (!token) return [{ token: null, projects: [] as ProjectData[] }, null];
+    // Инициализируем состояние
+    const state = {
+      token: token,
+      projects: [] as ProjectData[],
+    };
+
+    try {
+      // Получаем все joint записи, связанные с токеном
+      const jointEntries = kv.list({ prefix: ["joint", token] });
+
+      for await (const jointEntry of jointEntries) {
+        const projectUUID = jointEntry.key[2] as string;
+
+        // Загружаем данные проекта
+        const projectEntry = await kv.get<ProjectData>([
+          "projects",
+          projectUUID,
+        ]);
+        console.log(projectEntry);
+        if (projectEntry.value) {
+          state.projects.push({
+            uuid: projectUUID,
+            name: projectEntry.value.name,
+            environments: projectEntry.value.environments,
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Error loading state for token ${token}: ${error.message}`);
+      return [{} as typeof state, null];
+    }
+    console.log(state);
+    return [state, null];
+  })
+  .unload(async (args) => {
+    const { token, state } = args;
+
+    for (const project of state.projects) {
+      const projectKey = ["projects", project.uuid];
+
+      // Получаем текущие данные проекта
+      const projectEntry = await kv.get(projectKey);
+      const jointKey = ["joint", token!, projectKey[1]];
+
+      // Стартуем транзакцию
+      let res = { ok: false };
+      while (!res.ok) {
+        try {
+          // Если проект существует, проверяем его текущую версию и обновляем
+          if (projectEntry.value) {
+            res = await kv.atomic()
+              .check(projectEntry) // Проверяем, что проект не был изменен
+              .set(projectKey, {
+                name: project.name,
+                environments: project.environments,
+              }) // Обновляем проект
+              .set(jointKey, {}) // Обновляем связь joint
+              .commit();
+          } else {
+            // Если проекта нет, создаем новый
+            res = await kv.atomic()
+              .set(projectKey, {
+                name: project.name,
+                environments: project.environments,
+              }) // Создаем новый проект
+              .set(jointKey, {}) // Создаем связь joint
+              .commit();
+          }
+        } catch (error) {
+          throw new Error(`Transaction error: ${error.message}`);
+        }
+      }
+    }
+    return null;
+  })
+  .procedure("createProject", async (args, state) => {
+    const [projectName] = args;
+    const token = state.token;
+    console.log(state);
+    try {
+      const projectUUID = crypto.randomUUID();
+      const environments = { dev: {}, prod: {} };
+
+      // Добавляем новый проект в состояние
+      state.projects.push({
+        uuid: projectUUID,
+        name: projectName,
+        environments,
+      });
+
+      // joint связь теперь будет обработана во время unload
+      return { success: true };
+    } catch (error) {
+      return { success: false };
+    }
+  })
   .procedure("generateToken", async (args, state) => {
     const [userId] = args;
 
@@ -107,162 +138,322 @@ const apiflyManager = new apifly.manager<GuardenDefinition>(
       token,
     };
   })
-  .procedure("getEnvironments", async (args, state) => {
-    const environments: string[] = [];
-    const envsList = await kv.list({ prefix: [state.token!, "envs"] });
+  .procedure("addSecret", async (args, state) => {
+    const [projectName, envName, key, value] = args;
+    const token = state.token;
 
-    for await (const entry of envsList) {
-      const envName = entry.key[2] as string;
-      environments.push(envName);
+    // Ищем проект
+    const project = state.projects.find((p) => p.name === projectName);
+    if (!project) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
     }
 
-    return {
-      success: true,
-      environments,
-    };
-  })
-  .procedure("getCurrentEnvironment", async (args, state) => {
-    const currentEnvEntry = await kv.get([state.token!, "currentEnv"]);
-    const currentEnv = currentEnvEntry?.value as string || null;
-
-    return {
-      success: true,
-      currentEnv,
-    };
-  })
-  .procedure("selectEnvironment", async (args, state) => {
-    const [envName] = args;
-
-    const environmentsEntry = await kv.get([state.token!, "envs", envName]);
-    const environment = environmentsEntry.value as string | null;
-
-    if (environment === null) {
+    // Проверяем, есть ли указанное окружение
+    if (!project.environments[envName]) {
       return { success: false, message: `Окружение '${envName}' не найдено.` };
     }
 
-    state.currentEnv = envName;
+    // Проверяем, существует ли ключ
+    if (project.environments[envName][key]) {
+      return {
+        success: false,
+        message:
+          `Секрет с ключом '${key}' уже существует в окружении '${envName}(используй update)'.`,
+      };
+    }
+
+    // Если ключа нет, добавляем новый секрет
+    project.environments[envName][key] = value;
+
+    return { success: true, message: "Секрет успешно добавлен." };
+  })
+  .procedure("updateSecret", async (args, state) => {
+    const [projectName, envName, key, value] = args;
+    const token = state.token;
+
+    const project = state.projects.find((p) => p.name === projectName);
+    if (!project) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
+    }
+
+    if (!project.environments[envName]) {
+      return { success: false, message: `Окружение '${envName}' не найдено.` };
+    }
+
+    // Обновляем секрет
+    if (!project.environments[envName][key]) {
+      return { success: false, message: `Секрет с ключом '${key}' не найден.` };
+    }
+
+    project.environments[envName][key] = value;
+    return { success: true, message: "Секрет успешно обновлён." };
+  })
+  .procedure("deleteSecret", async (args, state) => {
+    const [projectName, envName, key] = args;
+    const token = state.token;
+
+    const project = state.projects.find((p) => p.name === projectName);
+    if (!project) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
+    }
+
+    if (!project.environments[envName]) {
+      return { success: false, message: `Окружение '${envName}' не найдено.` };
+    }
+
+    // Удаляем секрет
+    if (!project.environments[envName][key]) {
+      return { success: false, message: `Секрет с ключом '${key}' не найден.` };
+    }
+
+    delete project.environments[envName][key];
+    return { success: true, message: "Секрет успешно удалён." };
+  })
+  .procedure("fetchSecrets", async (args, state) => {
+    const [projectName, envName] = args;
+
+    const project = state.projects.find((p) => p.name === projectName);
+    if (!project) {
+      return { success: false, secrets: {} };
+    }
+
+    const environmentSecrets = project.environments[envName];
+    if (!environmentSecrets) {
+      return { success: false, secrets: {} };
+    }
+
     return {
       success: true,
-      message: `Окружение '${envName}' успешно выбрано.`,
+      secrets: environmentSecrets,
+      project: projectName,
+      environment: envName,
     };
   })
   .procedure("createEnvironment", async (args, state) => {
-    const [envName] = args;
-    const userId = state.token!;
+    const [projectName, envName] = args;
+    const token = state.token;
 
-    const envEntry = await kv.get([userId, "envs", envName]);
-    if (envEntry.value) {
+    const project = state.projects.find((p) => p.name === projectName);
+
+    if (!project) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
+    }
+
+    if (project.environments[envName]) {
       return {
         success: false,
         message: `Окружение '${envName}' уже существует.`,
       };
     }
 
-    await createEnvironment(userId, envName);
-    return {
-      success: true,
-      message: `Окружение '${envName}' успешно создано.`,
-    };
-  })
-  .procedure("fetchSecrets", async (args, state) => {
-    const [envName] = args;
+    project.environments[envName] = {}; // Создаем новое пустое окружение
 
-    if (!state.secrets[envName]) {
+    return { success: true, message: "Успешно создано!" };
+  })
+  .procedure("deleteProject", async (args, state) => {
+    const [projectName] = args;
+    const token = state.token;
+
+    const projectIndex = state.projects.findIndex((p) =>
+      p.name === projectName
+    );
+    if (projectIndex === -1) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
+    }
+
+    const projectUUID = state.projects[projectIndex].uuid;
+
+    try {
+      // Удаление проекта из состояния
+      state.projects.splice(projectIndex, 1);
+
+      // Удаление записи о проекте в базе данных
+      await kv.delete(["projects", projectUUID]);
+
+      // Удаление связей joint
+      await kv.delete(["joint", token!, projectUUID]);
+
       return {
-        currentEnv: "",
+        success: true,
+        message: `Проект '${projectName}' успешно удален.`,
+      };
+    } catch (error) {
+      return {
         success: false,
-        message: `Окружение '${envName}' не найдено.`,
+        message: `Ошибка при удалении проекта: ${error.message}`,
+      };
+    }
+  })
+  .procedure("renameProject", async (args, state) => {
+    const [oldProjectName, newProjectName] = args;
+
+    const project = state.projects.find((p) => p.name === oldProjectName);
+    if (!project) {
+      return {
+        success: false,
+        message: `Проект '${oldProjectName}' не найден.`,
       };
     }
 
     try {
+      // Проверка, что проект с новым именем не существует
+      const existingProject = state.projects.find((p) =>
+        p.name === newProjectName
+      );
+      if (existingProject) {
+        return {
+          success: false,
+          message: `Проект с именем '${newProjectName}' уже существует.`,
+        };
+      }
+
+      // Обновление имени проекта в состоянии
+      project.name = newProjectName;
+
       return {
-        currentEnv: state.currentEnv!,
         success: true,
-        secrets: state.secrets[envName],
+        message: `Проект успешно переименован в '${newProjectName}'.`,
       };
     } catch (error) {
       return {
-        currentEnv: "",
         success: false,
-        message: `Ошибка при получении секретов: ${error.message}`,
+        message: `Ошибка при переименовании проекта: ${error.message}`,
       };
     }
   })
-  .procedure("addSecret", async (args, state) => {
-    const [envName, key, value] = args;
+  .procedure("renameEnvironment", async (args, state) => {
+    const [projectName, oldEnvName, newEnvName] = args;
+    const token = state.token;
 
-    if (!state.secrets[envName]) {
-      return { success: false, message: `Окружение '${envName}' не найдено.` };
-    }
+    try {
+      // Находим проект
+      const project = state.projects.find((p) => p.name === projectName);
 
-    if (state.secrets[envName][key]) {
+      if (!project) {
+        return {
+          success: false,
+          message: `Проект '${projectName}' не найден.`,
+        };
+      }
+
+      // Проверяем, существует ли старое окружение
+      if (!project.environments[oldEnvName]) {
+        return {
+          success: false,
+          message:
+            `Окружение '${oldEnvName}' не найдено в проекте '${projectName}'.`,
+        };
+      }
+
+      // Проверяем, нет ли уже окружения с новым названием
+      if (project.environments[newEnvName]) {
+        return {
+          success: false,
+          message:
+            `Окружение с именем '${newEnvName}' уже существует в проекте '${projectName}'.`,
+        };
+      }
+
+      // Переименовываем окружение
+      project.environments[newEnvName] = project.environments[oldEnvName];
+      delete project.environments[oldEnvName];
+
+      // joint связь будет обновлена при вызове unload
       return {
-        success: false,
+        success: true,
         message:
-          `Секрет с ключом '${key}' уже существует в окружении '${envName}'.`,
+          `Окружение '${oldEnvName}' успешно переименовано в '${newEnvName}' в проекте '${projectName}'.`,
       };
-    }
-
-    state.secrets[envName][key] = value;
-    return {
-      success: true,
-      message: `Секрет '${key}' добавлен в окружение '${envName}'.`,
-    };
-  })
-  .procedure("updateSecret", async (args, state) => {
-    const [envName, key, value] = args;
-
-    if (!state.secrets[envName]) {
-      return { success: false, message: `Окружение '${envName}' не найдено.` };
-    }
-
-    if (!(key in state.secrets[envName])) {
+    } catch (error) {
       return {
         success: false,
-        message: `Ключ '${key}' не найден в окружении '${envName}'.`,
+        message: `Ошибка при переименовании окружения: ${error.message}`,
+      };
+    }
+  })
+  .procedure("inviteUserToProject", async (args, state) => {
+    const [inviteeUsername, projectName] = args;
+    const token = state.token;
+
+    // Находим проект по имени
+    const project = state.projects.find((p) => p.name === projectName);
+    if (!project) {
+      return { success: false, message: `Проект '${projectName}' не найден.` };
+    }
+
+    // Проверяем, существует ли пользователь (например, через таблицу токенов)
+    const userEntry = await kv.list({ prefix: ["tokens"] });
+    let inviteeToken: string | null = null;
+
+    for await (const user of userEntry) {
+      if (user.value === inviteeUsername) {
+        inviteeToken = user.key[1] as string;
+        break;
+      }
+    }
+
+    if (!inviteeToken) {
+      return {
+        success: false,
+        message: `Пользователь '${inviteeUsername}' не найден.`,
       };
     }
 
-    state.secrets[envName][key] = value;
+    // Проверяем, не связан ли пользователь уже с проектом
+    const jointEntry = await kv.get(["joint", inviteeToken, project.uuid]);
+    if (jointEntry.value) {
+      return {
+        success: false,
+        message: `Пользователь уже приглашен в проект '${projectName}'.`,
+      };
+    }
+
+    // Создаем запись в joint для связи пользователя с проектом
+    await kv.set(["joint", inviteeToken, project.uuid], {});
+
     return {
       success: true,
       message:
-        `Значение для ключа '${key}' в окружении '${envName}' обновлено.`,
+        `Пользователь '${inviteeUsername}' успешно приглашен в проект '${projectName}'.`,
     };
   })
-  .procedure("deleteSecret", async (args, state) => {
-    const [envName, key] = args;
+  .procedure("checkUserExists", async (args, state) => {
+    const [username] = args;
 
-    if (!state.secrets[envName]) {
-      return { success: false, message: `Окружение '${envName}' не найдено.` };
+    // Поиск по префиксу "tokens", где значения представляют собой имена пользователей
+    const userEntry = await kv.list({ prefix: ["tokens"] });
+
+    let userExists = false;
+
+    for await (const user of userEntry) {
+      if (user.value === username) {
+        userExists = true;
+        break;
+      }
     }
 
-    if (!(key in state.secrets[envName])) {
+    if (!userExists) {
       return {
         success: false,
-        message: `Ключ '${key}' не найден в окружении '${envName}'.`,
+        message: `Пользователь '${username}' не найден.`,
       };
     }
 
-    delete state.secrets[envName][key];
-    return {
-      success: true,
-      message: `Ключ '${key}' успешно удалён из окружения '${envName}'.`,
-    };
+    return { success: true, message: `Пользователь '${username}' найден.` };
   })
   .filter("token", () => false)
-  .guard("token", async (state) => {
+  .guard("token", async ({ currentValue, newValue, state }) => {
+    if (currentValue === null) return true;
     const { token } = state;
-    if (!token) return false;
+    const tokenEntry = await kv.get(["tokens", token!]);
 
-    const tokenEntry = await kv.get(["tokens", token]);
-    return !!tokenEntry.value;
+    return tokenEntry.value !== null;
   });
 
 const apiflyServer = new apifly.server<GuardenDefinition>(
   apiflyManager,
   "/api/apifly",
+  //@ts-ignore
   {
     token: "Authorization",
   },

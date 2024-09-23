@@ -1,9 +1,50 @@
-import { createClient } from "./api.ts";
 import { decryptText, encryptText } from "./crypto.ts";
 
 const CONFIG_DIR = Deno.env.get("GUARDEN_CONFIG_DIR") ||
   `${Deno.env.get("HOME")}/.guarden`;
 const TOKEN_FILE = `${CONFIG_DIR}/token.enc`;
+const CONFIG_FILE = `${CONFIG_DIR}/config.json`;
+
+interface Config {
+  currentProject?: string;
+  currentEnv?: string;
+}
+
+async function readConfig(): Promise<Config> {
+  try {
+    const data = await Deno.readTextFile(CONFIG_FILE);
+    return JSON.parse(data);
+  } catch (e) {
+    return {};
+  }
+}
+
+async function saveConfig(config: Config) {
+  const data = JSON.stringify(config, null, 2);
+  await Deno.writeTextFile(CONFIG_FILE, data);
+}
+
+export async function setCurrentProject(project: string) {
+  const config = await readConfig();
+  config.currentProject = project;
+  await saveConfig(config);
+}
+
+export async function setCurrentEnv(env: string) {
+  const config = await readConfig();
+  config.currentEnv = env;
+  await saveConfig(config);
+}
+
+export async function getCurrentProject(): Promise<string | null> {
+  const config = await readConfig();
+  return config.currentProject || null;
+}
+
+export async function getCurrentEnv(): Promise<string | null> {
+  const config = await readConfig();
+  return config.currentEnv || null;
+}
 
 async function ensureConfigDir() {
   try {
@@ -28,38 +69,16 @@ export async function getToken(): Promise<string | null> {
   try {
     const encryptedToken = await Deno.readTextFile(TOKEN_FILE);
     const token = await decryptText(encryptedToken);
+    Deno.env.set("GUARDEN_TOKEN", token);
     return token;
   } catch {
     return null;
   }
 }
 
-export async function getEnv(): Promise<string | null> {
-  const client = await createClient();
-
-  const response = await client.call("getCurrentEnvironment", []);
-
-  if (!response.success || !response.currentEnv) {
-    return null;
-  }
-
-  return response.currentEnv;
-}
-
-export async function setCurrentEnv(env: string) {
-  Deno.env.set("GUARDEN_ENV", env);
-}
-
-export async function getCurrentEnv(): Promise<string | null> {
-  let env = Deno.env.get("GUARDEN_ENV");
-  if (!env) {
-    return await getEnv();
-  }
-  return env;
-}
-
 export async function removeToken() {
   try {
+    Deno.env.delete("GUARDEN_TOKEN");
     await Deno.remove(TOKEN_FILE);
   } catch {}
 }

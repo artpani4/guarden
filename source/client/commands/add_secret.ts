@@ -1,26 +1,40 @@
 import { Command } from "../deps.ts";
-import { addSecret } from "../utils/api.ts";
-import { getEnv } from "../utils/config.ts";
-import { green, red, yellow } from "../deps.ts";
+import { createClient } from "../utils/api.ts";
+import { getCurrentEnv, getCurrentProject } from "../utils/config.ts";
+import { green, red } from "../deps.ts";
+
 export function addSecretCommand() {
   return new Command()
-    .description("Добавить новый секрет (ключ-значение) в текущее окружение.")
+    .description("Добавить секрет в текущее окружение.")
     .arguments("<key:string> <value:string>")
     .action(async (options, key: string, value: string) => {
       try {
-        const env = await getEnv();
+        const project = await getCurrentProject();
+        const env = await getCurrentEnv();
 
-        if (!env) {
-          console.error(
-            yellow(
-              "Окружение не выбрано. Выберите окружение с помощью команды 'select'.",
-            ),
-          );
-          Deno.exit(1);
+        if (!project || !env) {
+          console.error(red("Проект или окружение не выбрано."));
+          return;
         }
 
-        const result = await addSecret(env, key, value);
-        console.log(green(result));
+        const client = await createClient();
+        const response = await client.call("addSecret", [
+          project,
+          env,
+          key,
+          value,
+        ]);
+
+        if (!response.success) {
+          console.error(red(`Ошибка добавления секрета: ${response.message}`));
+          return;
+        }
+
+        console.log(
+          green(
+            `Секрет '${key}' успешно добавлен в окружение '${env}' проекта '${project}'.`,
+          ),
+        );
       } catch (error) {
         console.error(red(`Ошибка: ${error.message}`));
       }
