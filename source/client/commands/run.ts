@@ -1,41 +1,44 @@
 import { Command } from "../deps.ts";
-import { fetchSecrets } from "../utils/api.ts";
-import { getEnv, getToken } from "../utils/config.ts";
-import { green, red, yellow } from "../deps.ts";
+import { createClient } from "../utils/api.ts"; // Добавляем клиента Apifly
+import { getCurrentEnv, getCurrentProject } from "../utils/config.ts";
+import { green, red } from "../deps.ts";
 
 export function runCommand() {
   return new Command()
-    .description(
-      "Выполнить команду с доступными секретами как переменными окружения.",
-    )
+    .description("Выполнить команду с секретами как переменными окружения.")
     .arguments("<command...:string>")
     .action(async (options, ...command: string[]) => {
       try {
-        const env = await getEnv();
-        const token = await getToken();
+        const project = await getCurrentProject();
+        const env = await getCurrentEnv();
 
-        if (!env) {
-          console.error(
-            yellow(
-              "Окружение не выбрано. Пожалуйста, выберите окружение с помощью команды 'select'.",
-            ),
-          );
-          Deno.exit(1);
+        if (!project || !env) {
+          console.error(red("Проект или окружение не выбрано."));
+          return;
         }
 
-        if (!token) {
-          console.error(
-            yellow(
-              "Токен не найден. Пожалуйста, сгенерируйте токен с помощью команды 'generate'.",
-            ),
-          );
-          Deno.exit(1);
+        // Используем Apifly-клиент для получения секретов
+        const client = await createClient();
+        const response = await client.call("fetchSecrets", [project, env]);
+
+        if (!response.success) {
+          console.error(red(`Ошибка получения секретов: ${response.error}`));
+          return;
         }
 
-        const { secrets, currentEnv } = await fetchSecrets(env);
+        const { secrets } = response;
 
+        if (Object.keys(secrets).length === 0) {
+          console.log(
+            green(
+              `Нет секретов в окружении '${env}' проекта '${project}'.`,
+            ),
+          );
+          return;
+        }
+
+        // Объединяем секреты с текущими переменными окружения
         const cmd = command.join(" ");
-
         const process = Deno.run({
           cmd: ["sh", "-c", cmd],
           env: { ...Deno.env.toObject(), ...secrets },
