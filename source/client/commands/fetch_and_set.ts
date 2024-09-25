@@ -8,7 +8,8 @@ export function fetchAndSetSecretsCommand() {
     .description(
       "Получить секреты для текущего окружения и установить их в переменные окружения.",
     )
-    .action(async () => {
+    .option("--export <path:string>", "Сохранить переменные окружения в файл")
+    .action(async ({ export: exportPath }) => {
       try {
         const project = await getCurrentProject();
         const env = await getCurrentEnv();
@@ -35,6 +36,15 @@ export function fetchAndSetSecretsCommand() {
             ),
           );
           return;
+        }
+
+        // Если указан путь для экспорта, сохраняем секреты в файл
+        if (exportPath) {
+          const exportContent = Object.entries(secrets)
+            .map(([key, value]) => `export ${key}="${value}"`)
+            .join("\n");
+          await Deno.writeTextFile(exportPath, exportContent);
+          console.log(green(`Секреты сохранены в файл: ${exportPath}`));
         }
 
         // Устанавливаем секреты в переменные окружения
