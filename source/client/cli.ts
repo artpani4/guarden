@@ -18,6 +18,7 @@ import { runCommand } from "./commands/run.ts";
 import { inviteUserCommand } from "./commands/invite_user.ts";
 import { logoutCommand } from "./commands/logout.ts";
 import { loginCommand } from "./commands/login.ts";
+import { fetchAndSetSecretsCommand } from "./commands/fetch_and_set.ts";
 
 const cli = new Command()
   .name("guarden")
@@ -38,6 +39,7 @@ const cli = new Command()
   .command("update-secret", updateSecretCommand())
   .command("delete-secret", deleteSecretCommand())
   .command("fetch-secrets", fetchSecretsCommand())
+  .command("fetch-set", fetchAndSetSecretsCommand())
   .command("show-current", showCurrentConfigCommand())
   .command("run", runCommand())
   .command("logout", logoutCommand())
