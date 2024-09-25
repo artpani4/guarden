@@ -1,9 +1,7 @@
-import { decryptText, encryptText } from "./crypto.ts";
-
 // Определяем пути для хранения данных в локальной среде
 const CONFIG_DIR = Deno.env.get("GUARDEN_CONFIG_DIR") ||
   `${Deno.env.get("HOME")}/.guarden`;
-const TOKEN_FILE = `${CONFIG_DIR}/token.enc`;
+const TOKEN_FILE = `${CONFIG_DIR}/token.txt`;
 const CONFIG_FILE = `${CONFIG_DIR}/config.json`;
 
 // Интерфейс для хранения текущего проекта и окружения
@@ -103,8 +101,7 @@ export async function saveToken(token: string) {
 
   // Сохраняем в файл
   await ensureConfigDir();
-  const encryptedToken = await encryptText(token);
-  await Deno.writeTextFile(TOKEN_FILE, encryptedToken);
+  await Deno.writeTextFile(TOKEN_FILE, token);
 }
 
 // Получение токена
@@ -116,8 +113,7 @@ export async function getToken(): Promise<string | null> {
 
   // Если нет токена в переменных окружения, ищем в файле
   try {
-    const encryptedToken = await Deno.readTextFile(TOKEN_FILE);
-    const token = await decryptText(encryptedToken);
+    const token = await Deno.readTextFile(TOKEN_FILE);
     Deno.env.set("GUARDEN_TOKEN", token); // Записываем токен в env для дальнейшего использования
     return token;
   } catch {
